@@ -1,0 +1,37 @@
+Metadata:
+  # global id for this sim (ideally 1 word)
+  sim_id: "prelim"
+  # readable description
+  sim_desc: "Preliminary run of 1 nanosecond at 300 K — test bed for refactoring and further processing code"
+  # execution dates of chunks (yyyy-mm-ddhh:mmZ,yyyy-mm-ddhh:mmZ)
+  exec_times: []
+
+  partition:
+    # stepsize in real units
+    step_size: 0.5
+    # steps in a chunk
+    chunk_size: 500000
+    # number of chunks
+    n_chunks: 40
+
+  box:
+    # number of atoms
+    n_atoms: 49026
+    # atom id and correponding elements
+    elements: [[1, "O"], [2, "H"]]
+
+  experimental:
+    stat_T: 300.0
+    stat_P: 1.0
+
+  output:
+    # trajectory writing interval
+    trajectory: 1000
+    # bond data writing interval
+    bonds: 1000
+    # species file writing interval
+    species: 1000
+    # thermodynamic data writing interval
+    thermo: 200
+    
+# real simtime = step_size*chunk_size*n_chunks

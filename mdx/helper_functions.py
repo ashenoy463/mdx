@@ -1,6 +1,6 @@
 import os
 import h5py
-import dask
+from collections.abc import MutableMapping
 import numpy as np
 
 
@@ -27,6 +27,18 @@ def dict_merge(dct, merge_dct):
             dict_merge(dct[k], merge_dct[k])
         else:
             dct[k] = merge_dct[k]
+
+
+def dict_flatten(dictionary, parent_key='', separator='_'):
+    # From https://stackoverflow.com/a/6027615
+    items = []
+    for key, value in dictionary.items():
+        new_key = parent_key + separator + key if parent_key else key
+        if isinstance(value, MutableMapping):
+            items.extend(dict_flatten(value, new_key, separator=separator).items())
+        else:
+            items.append((new_key, value))
+    return dict(items)
 
 
 def write_rdf(rdf_obj, sim_id: str, chunk_id: str, c: str, s: str, suffix=None):

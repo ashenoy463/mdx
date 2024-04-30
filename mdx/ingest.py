@@ -1,15 +1,11 @@
-import dask
 from scipy.sparse import coo_array
 import dask.bag as db
-import dask.dataframe as dd
-import dask.array as da
 import re
 import os
-import numpy as np
 import pandas as pd
-from .io import Scribe
 import io
 import yaml
+from .format.meta import FormatMeta
 
 # ASSUMPTIONS:
 #
@@ -39,7 +35,7 @@ class Simulation:
         self.block = block
 
         with open(meta_file, "r") as f:
-            self.meta = yaml.safe_load(f)["Metadata"]
+            self.meta = FormatMeta(**yaml.safe_load(f)["Metadata"]).model_dump()
 
         if not chunks:
             self.chunks = [i for i in range(self.meta["partition"]["n_chunks"])]
