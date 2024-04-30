@@ -1,0 +1,34 @@
+[project]
+name = "mdx"
+version = "0.0.1"
+authors = [
+  { name="Ayush Shenoy", email="ayush.shenoy@protonmail.com" },
+]
+description = "Utilities for parsing and analysing reactive molecular simulation data"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License (GPLv3)",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+"dask",
+"h5netcdf",
+"h5py",
+"numpy",
+"pandas",
+"pydantic",
+"PyYAML",
+"scipy",
+"sparse",
+"xarray"
+]
+
+[project.urls]
+Homepage = "https://github.com/ashenoy463/mdx/issues"
+Issues = "https://github.com/ashenoy463/mdx/issues"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

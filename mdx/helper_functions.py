@@ -1,6 +1,7 @@
 import os
 import h5py
 import dask
+import numpy as np
 
 
 # thints
@@ -8,8 +9,24 @@ class DataFileExists(Exception):
     pass
 
 
-def bundle_data(label):
-    pass
+def dict_merge(dct, merge_dct):
+    """
+    Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
+    updating only top-level keys, dict_merge recurses down into dicts nested
+    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
+    ``dct``.
+    :param dct: dict onto which the merge is executed
+    :param merge_dct: dct merged into dct
+    :return: None
+    """
+    # From https://gist.github.com/angstwad/bf22d1822c38a92ec0a9
+    for k, v in merge_dct.items():
+        if (
+            k in dct and isinstance(dct[k], dict) and isinstance(merge_dct[k], dict)
+        ):  # noqa
+            dict_merge(dct[k], merge_dct[k])
+        else:
+            dct[k] = merge_dct[k]
 
 
 def write_rdf(rdf_obj, sim_id: str, chunk_id: str, c: str, s: str, suffix=None):
@@ -68,5 +85,13 @@ def read_rdf(sim_id: str, chunk_id: str, c: str, s: str):
 
 
 # def bond_unpack()
-    #sym
-    #filltocorners
+# sym
+# filltocorners
+
+
+def extract(f, bag):
+    """
+    Eagerly map function onto bag and return an array
+    """
+    array = np.array((bag.map(f).compute()))
+    return array
