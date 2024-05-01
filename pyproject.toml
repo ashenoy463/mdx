@@ -22,7 +22,8 @@ dependencies = [
 "PyYAML",
 "scipy",
 "sparse",
-"xarray"
+"xarray",
+"pre-commit"
 ]
 
 [project.urls]

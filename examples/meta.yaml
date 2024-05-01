@@ -5,6 +5,8 @@ Metadata:
   sim_desc: "Preliminary run of 1 nanosecond at 300 K — test bed for refactoring and further processing code"
   # execution dates of chunks (yyyy-mm-ddhh:mmZ,yyyy-mm-ddhh:mmZ)
   exec_times: []
+  # path of folder containing simulation chunks
+  data_path: "/home/Work/ayush/sim_data/prelim"
 
   partition:
     # stepsize in real units

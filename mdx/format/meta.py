@@ -1,6 +1,10 @@
+from pydantic import BaseModel, PositiveFloat, PositiveInt, ValidationError
+from typing import Literal, Dict, Any, Optional, Union
 from datetime import datetime
-from pydantic import BaseModel, PositiveFloat, PositiveInt
-from typing import Literal, Dict, Any, Optional
+
+import os
+from pydantic.functional_validators import AfterValidator
+from typing_extensions import Annotated
 
 # Allowed values
 
@@ -19,6 +23,16 @@ valid_elements = [
 ]
 # fmt: on
 
+# Validators
+
+
+def check_path(path: os.PathLike) -> os.PathLike:
+    assert os.path.exists(path), f"{path} is not a valid path"
+    return path
+
+
+ValidPath = Annotated[os.PathLike, AfterValidator(check_path)]
+
 # Format for simulation metadata
 
 
@@ -28,7 +42,7 @@ class MetaPartition(BaseModel):
     n_chunks: PositiveInt  # Chunks in a simulation
 
 
-# TEMPFIX: Find a
+# TEMPFIX: Everything that would be here is left to the user currently
 class MetaExperimental(BaseModel):
     pass
 
@@ -51,7 +65,8 @@ class FormatMeta(BaseModel):
     sim_id: str
     sim_desc: str
     exec_times: list[tuple[datetime, datetime]]
+    data_path: ValidPath
     partition: MetaPartition
     box: MetaBox
-    experimental: Optional[Dict[str, Any]] 
+    experimental: Optional[Dict[str, Any]]
     output: MetaOutput
