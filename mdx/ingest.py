@@ -129,13 +129,58 @@ class Simulation:
 
         self.bonds = corpus.compute() if self.eager else corpus
 
-    def read_species(self):
-        pass
+    def read_species(self, data_path: os.PathLike = None) -> None:
+        """
+        Read log files, parse and store reaxFF species data in class attribute
+
+        Args:
+        data_path (os.PathLike): alternate base path containing chosen chunks
+        """
+        corpus = (
+            db.read_text(
+                self.__get_data_files(data_path, "species"), linedelimiter="# Timestep"
+            )
+            .map(lambda x: x[1:].split("\n")[:-1])
+            .remove(lambda x: x == [])
+            .map(self.__process_species_step)
+        )
+
+        self.species = corpus.compute() if self.eager else corpus
+
+    def read_thermo(self, data_path: os.PathLike = None) -> None:
+        """
+        Read log files, parse and store thermodynamic data in class attribute
+
+        Args:
+        data_path (os.PathLike): alternate base path containing chosen chunks
+        """
+        thermo_data = pd.DataFrame()
+
+        for log_path in self.__get_data_files(data_path, "log"):
+            with open(log_path, "r", encoding="UTF-8") as logfile:
+                # Get relevant part of log
+                corpus = logfile.read().split("Loop")[0].split("Step")[1]
+                # Extract header
+                headers = corpus.split("\n")[0].split()
+                headers.insert(0, "Step")
+                # Generate and write list of row-lists
+                rows = [
+                    [float(itm) for itm in line.split()]
+                    for line in corpus.split("\n")[1:]
+                ][:-1]
+                thermo_data = pd.concat(
+                    [thermo_data, pd.DataFrame(rows, columns=headers)]
+                )
+
+        thermo_data["Boxtime"] = thermo_data["Step"].map(
+            lambda x: x * self.meta["partition"]["step_size"]
+        )
+        thermo_data.drop_duplicates(["Step"], inplace=True)
+        thermo_data.reset_index(drop=True, inplace=True)
+
+        self.thermo = thermo_data
 
     def read_ave(self):
-        pass
-
-    def read_thermo(self):
         pass
 
     # Intermediate processing steps
@@ -225,19 +270,37 @@ class Simulation:
             ),
         }
 
+    def __process_species_step(self, step_text: str):
+        frame = {"timestep": "", "no_moles": "", "no_species": "", "species": {}}
+        header, data = list(map(lambda x: x.split(), step_text))
+
+        frame["timestep"] = int(data.pop(0))
+
+        print(header)
+        print(data)
+        frame["no_moles"] = int(data[0])
+        frame["no_species"] = int(data[1])
+
+        for specie, amount in zip(header[2:], data[2:]):
+            if frame["timestep"] == 2000:
+                print(specie, amount, "\n")
+            frame["species"][specie] = int(amount)
+
+        return frame
+
     # Helper methods
 
     @validate_call
     def __decide_chunks(
-        self, given_chunks: Union[list[int], int], meta_chunks: PositiveInt
+        self, given_chunks: Union[list[int], int, None], meta_chunks: PositiveInt
     ) -> list[int]:
         """
         Validate given chunks against metadata
         """
-        if type(given_chunks) is int:
-            given_chunks = [given_chunks]
         valid_chunks = [i for i in range(meta_chunks)]
         if given_chunks is not None:
+            if type(given_chunks) is int:
+                given_chunks = [given_chunks]
             if set(given_chunks) <= set(valid_chunks):
                 return given_chunks
             else:
@@ -257,8 +320,14 @@ class Simulation:
         """
         base_path = self.meta["data_path"] if data_path is None else data_path
 
+        # TEMPFIX: file prefixes and extensions
         filetypes = (
-            {"trajectory": "dump", "bonds": "reaxff", "species": "out", "log_out": ""}
+            {
+                "trajectory": ("dat_trajectory" ".dump"),
+                "bonds": ("dat_bonds", ".reaxff"),
+                "species": ("dat_species", ".out"),
+                "log": ("log_out", ""),
+            }
             if exts is None
             else exts
         )
@@ -267,7 +336,7 @@ class Simulation:
             check_path(
                 os.path.join(
                     base_path,
-                    f"{chunk}/dat_{type}_{self.meta['sim_id']}_{chunk}.{filetypes[type]}",
+                    f"{chunk}/{filetypes[type][0]}_{self.meta['sim_id']}_{chunk}{filetypes[type][1]}",
                 )
             )
             for chunk in self.chunks
