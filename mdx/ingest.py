@@ -131,7 +131,7 @@ class Simulation:
 
     def read_species(self, data_path: os.PathLike = None) -> None:
         """
-        Read log files, parse and store reaxFF species data in class attribute
+        Read species files, parse and store species data in class attribute
 
         Args:
         data_path (os.PathLike): alternate base path containing chosen chunks

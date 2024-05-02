@@ -7,6 +7,7 @@ click==8.1.7
 cloudpickle==3.0.0
 comm==0.2.2
 contourpy==1.2.1
+cycler==0.12.1
 dask==2024.4.2
 debugpy==1.8.1
 decorator==5.1.1
@@ -15,22 +16,26 @@ distributed==2024.4.2
 exceptiongroup==1.2.1
 executing==2.0.1
 filelock==3.14.0
+fonttools==4.51.0
 fsspec==2024.3.1
 h5netcdf==1.3.0
 h5py==3.11.0
 identify==2.5.36
 importlib_metadata==7.1.0
+importlib_resources==6.4.0
 ipykernel==6.29.4
 ipython==8.18.1
 jedi==0.19.1
 Jinja2==3.1.3
 jupyter_client==8.6.1
 jupyter_core==5.7.2
+kiwisolver==1.4.5
 llvmlite==0.42.0
 locket==1.0.0
 MarkupSafe==2.1.5
+matplotlib==3.8.4
 matplotlib-inline==0.1.7
--e git+ssh://git@github.com/ashenoy463/mdx.git@5b38f1fd1eb0a996ed5aabcba52ce3124e4c1fbd#egg=mdx
+-e git+ssh://git@github.com/ashenoy463/mdx.git@6652953e7a6f2447f301d1829a95064aa6063ce3#egg=mdx
 msgpack==1.0.8
 mypy-extensions==1.0.0
 nest-asyncio==1.6.0
@@ -54,6 +59,7 @@ pure-eval==0.2.2
 pydantic==2.7.1
 pydantic_core==2.18.2
 Pygments==2.17.2
+pyparsing==3.1.2
 python-dateutil==2.9.0.post0
 pytz==2024.1
 PyYAML==6.0.1
