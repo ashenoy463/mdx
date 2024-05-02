@@ -29,7 +29,7 @@ def dict_merge(dct, merge_dct):
             dct[k] = merge_dct[k]
 
 
-def dict_flatten(dictionary, parent_key='', separator='_'):
+def dict_flatten(dictionary, parent_key="", separator="_"):
     # From https://stackoverflow.com/a/6027615
     items = []
     for key, value in dictionary.items():

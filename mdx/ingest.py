@@ -6,12 +6,8 @@ import pandas as pd
 import io
 import yaml
 from .format.meta import FormatMeta
-
-# ASSUMPTIONS:
-# GRID is never used
-# LP is type dependent; have to ask
-# N is constant ; good assumption by and large
-# Molecule ID is useless ; have to ask
+from pydantic import PositiveInt, ValidationError, validate_call
+from typing import Union
 
 
 # Exceptions
@@ -29,10 +25,31 @@ class InvalidChunks(Exception):
     pass
 
 
-# TODO
-#
-# Write intermediate bag step formas
-# Overridable blocksize
+# Validators
+
+
+@validate_call
+def decide_chunks(
+    given_chunks: Union[list[int], int], meta_chunks: PositiveInt
+) -> list[int]:
+    """
+    Validate given chunks against metadata
+    """
+    if type(given_chunks) is int:
+        given_chunks = [given_chunks]
+    valid_chunks = [i for i in range(meta_chunks)]
+    if given_chunks is not None:
+        if set(given_chunks) <= set(valid_chunks):
+            return given_chunks
+        else:
+            raise InvalidChunks(
+                f"Valid chunks are in range [0,...,{valid_chunks[-1]}]. Was supplied {given_chunks}"
+            )
+            # raise ValidationError()
+    else:
+        return valid_chunks
+
+
 class Simulation:
     """
     Representation of an entire simulation run, with its metadata.
@@ -44,7 +61,7 @@ class Simulation:
 
     Args:
         meta_file (os.PathLike): File specifying simulation metadata
-        chunks (list[int]): Chosen simulation chunks to handle
+        chunks (list[int] / int): Chosen simulation chunks to handle
         block (str): Block size for dask
         eager (bool): Whether to compute attributes immediately
 
@@ -67,20 +84,9 @@ class Simulation:
         with open(meta_file, "r") as f:
             self.meta = FormatMeta(**yaml.safe_load(f)["Metadata"]).model_dump()
 
-        valid_chunks = [i for i in range(self.meta["partition"]["n_chunks"])]
-
         self.eager = eager
         self.block = block_size
-
-        if chunks is not None:
-            if set(chunks) <= set(valid_chunks):
-                self.chunks = chunks
-            else:
-                raise InvalidChunks(
-                    f"Valid chunks are in range [0,...,{valid_chunks[-1]}]. Was supplied {chunks}"
-                )
-        else:
-            self.chunks = valid_chunks
+        self.chunks = decide_chunks(chunks, self.meta["partition"]["n_chunks"])
 
         self.trajectory = None
         self.bonds = None
@@ -94,7 +100,7 @@ class Simulation:
 
     # End user methods
 
-    def read_bonds(self, data_path: os.PathLike = None):
+    def read_bonds(self, data_path: os.PathLike = None) -> None:
         """
         Read bond files, parse and store in class attribute
 
@@ -129,7 +135,7 @@ class Simulation:
 
     def read_trajectory(
         self, data_path: os.PathLike = None, atomic_format: str = "frame"
-    ):
+    ) -> None:
         """
         Read trajectory files, parse and store in class attribute
 
