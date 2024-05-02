@@ -5,7 +5,8 @@ import os
 import pandas as pd
 import io
 import yaml
-from .format.meta import FormatMeta
+from mdx.models.core import check_path
+from mdx.models.meta import FormatMeta
 from pydantic import PositiveInt, ValidationError, validate_call
 from typing import Union
 
@@ -23,31 +24,6 @@ class InvalidFormat(Exception):
 
 class InvalidChunks(Exception):
     pass
-
-
-# Validators
-
-
-@validate_call
-def decide_chunks(
-    given_chunks: Union[list[int], int], meta_chunks: PositiveInt
-) -> list[int]:
-    """
-    Validate given chunks against metadata
-    """
-    if type(given_chunks) is int:
-        given_chunks = [given_chunks]
-    valid_chunks = [i for i in range(meta_chunks)]
-    if given_chunks is not None:
-        if set(given_chunks) <= set(valid_chunks):
-            return given_chunks
-        else:
-            raise InvalidChunks(
-                f"Valid chunks are in range [0,...,{valid_chunks[-1]}]. Was supplied {given_chunks}"
-            )
-            # raise ValidationError()
-    else:
-        return valid_chunks
 
 
 class Simulation:
@@ -86,7 +62,7 @@ class Simulation:
 
         self.eager = eager
         self.block = block_size
-        self.chunks = decide_chunks(chunks, self.meta["partition"]["n_chunks"])
+        self.chunks = self.__decide_chunks(chunks, self.meta["partition"]["n_chunks"])
 
         self.trajectory = None
         self.bonds = None
@@ -100,6 +76,31 @@ class Simulation:
 
     # End user methods
 
+    def read_trajectory(
+        self, data_path: os.PathLike = None, atomic_format: str = "frame"
+    ) -> None:
+        """
+        Read trajectory files, parse and store in class attribute
+
+        Args:
+        data_path (os.PathLike): alternate base path containing chosen chunks
+        atomic_format: format to project trajectories into
+        """
+        corpus = (
+            db.read_text(
+                self.__get_data_files(data_path, "trajectory"),
+                linedelimiter="TIMESTEP",
+                blocksize=self.block,
+            )
+            .remove(lambda x: x == "ITEM: TIMESTEP")
+            .map(lambda x: x.split("ITEM: "))
+            .map(lambda x: x[:-1] if (x[-1] == "TIMESTEP") else x)
+            .map(self.__process_traj_step, atomic_format=atomic_format)
+            # .distinct(key=lambda x: x["timestep"]) ; causes memory leak on nanosecond scale data
+        )
+
+        self.trajectory = corpus.compute() if self.eager else corpus
+
     def read_bonds(self, data_path: os.PathLike = None) -> None:
         """
         Read bond files, parse and store in class attribute
@@ -107,17 +108,12 @@ class Simulation:
         Args:
         data_path (os.PathLike): alternate base path containing chosen chunks
         """
-        base_path = self.meta["data_path"] if data_path is None else data_path
-        file_paths = [
-            os.path.join(
-                base_path,
-                f"{chunk}/dat_bonds_{self.meta['sim_id']}_{chunk}.reaxff",
-            )
-            for chunk in self.chunks
-        ]
-
         corpus = (
-            db.read_text(file_paths, linedelimiter="# Timestep", blocksize=self.block)
+            db.read_text(
+                self.__get_data_files(data_path, "bonds"),
+                linedelimiter="# Timestep",
+                blocksize=self.block,
+            )
             .remove(lambda x: x == "# Timestep")
             .map(
                 lambda x: [
@@ -132,36 +128,6 @@ class Simulation:
         )
 
         self.bonds = corpus.compute() if self.eager else corpus
-
-    def read_trajectory(
-        self, data_path: os.PathLike = None, atomic_format: str = "frame"
-    ) -> None:
-        """
-        Read trajectory files, parse and store in class attribute
-
-        Args:
-        data_path (os.PathLike): alternate base path containing chosen chunks
-        atomic_format: format to project trajectories into
-        """
-        base_path = self.meta["data_path"] if data_path is None else data_path
-        file_paths = [
-            os.path.join(
-                base_path,
-                f"{chunk}/dat_trajectory_{self.meta['sim_id']}_{chunk}.dump",
-            )
-            for chunk in self.chunks
-        ]
-
-        corpus = (
-            db.read_text(file_paths, linedelimiter="TIMESTEP", blocksize=self.block)
-            .remove(lambda x: x == "ITEM: TIMESTEP")
-            .map(lambda x: x.split("ITEM: "))
-            .map(lambda x: x[:-1] if (x[-1] == "TIMESTEP") else x)
-            .map(self.__process_traj_step, atomic_format=atomic_format)
-            # .distinct(key=lambda x: x["timestep"]) ; causes memory leak on nanosecond scale data
-        )
-
-        self.trajectory = corpus.compute() if self.eager else corpus
 
     def read_species(self):
         pass
@@ -241,8 +207,6 @@ class Simulation:
         """
         Parse raw bond data text of one frame into chosen format
         """
-        # TODO Leverage symmetry and halve time
-        # atomids start from 0 (actualid -1)
         timestep = int(step_text.pop(0))
 
         i, j, v = [], [], []
@@ -260,3 +224,52 @@ class Simulation:
                 shape=(self.meta["box"]["n_atoms"], self.meta["box"]["n_atoms"]),
             ),
         }
+
+    # Helper methods
+
+    @validate_call
+    def __decide_chunks(
+        self, given_chunks: Union[list[int], int], meta_chunks: PositiveInt
+    ) -> list[int]:
+        """
+        Validate given chunks against metadata
+        """
+        if type(given_chunks) is int:
+            given_chunks = [given_chunks]
+        valid_chunks = [i for i in range(meta_chunks)]
+        if given_chunks is not None:
+            if set(given_chunks) <= set(valid_chunks):
+                return given_chunks
+            else:
+                raise InvalidChunks(
+                    f"Valid chunks are in range [0,...,{valid_chunks[-1]}]. Was supplied {given_chunks}"
+                )
+                # raise ValidationError()
+        else:
+            return valid_chunks
+
+    @validate_call
+    def __get_data_files(
+        self, data_path: Union[None, os.PathLike], type: str, exts=None
+    ):
+        """
+        Get files across simulation chunks
+        """
+        base_path = self.meta["data_path"] if data_path is None else data_path
+
+        filetypes = (
+            {"trajectory": "dump", "bonds": "reaxff", "species": "out", "log_out": ""}
+            if exts is None
+            else exts
+        )
+
+        file_paths = [
+            check_path(
+                os.path.join(
+                    base_path,
+                    f"{chunk}/dat_{type}_{self.meta['sim_id']}_{chunk}.{filetypes[type]}",
+                )
+            )
+            for chunk in self.chunks
+        ]
+        return file_paths

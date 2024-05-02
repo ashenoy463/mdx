@@ -1,10 +1,7 @@
-from pydantic import BaseModel, PositiveFloat, PositiveInt, ValidationError
-from typing import Literal, Dict, Any, Optional, Union
+from pydantic import BaseModel, PositiveFloat, PositiveInt
+from typing import Literal, Dict, Any, Optional
 from datetime import datetime
-
-import os
-from pydantic.functional_validators import AfterValidator
-from typing_extensions import Annotated
+from mdx.models.core import ValidPath
 
 # Allowed values
 
@@ -23,15 +20,6 @@ valid_elements = [
 ]
 # fmt: on
 
-# Validators
-
-
-def check_path(path: os.PathLike) -> os.PathLike:
-    assert os.path.exists(path), f"{path} is not a valid path"
-    return path
-
-
-ValidPath = Annotated[os.PathLike, AfterValidator(check_path)]
 
 # Format for simulation metadata
 
