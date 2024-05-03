@@ -77,7 +77,10 @@ class Simulation:
     # End user methods
 
     def read_trajectory(
-        self, data_path: os.PathLike = None, atomic_format: str = "frame"
+        self,
+        data_path: os.PathLike = None,
+        atomic_format: str = "frame",
+        blocksize: str = None,
     ) -> None:
         """
         Read trajectory files, parse and store in class attribute
@@ -90,7 +93,7 @@ class Simulation:
             db.read_text(
                 self.__get_data_files(data_path, "trajectory"),
                 linedelimiter="TIMESTEP",
-                blocksize=self.block,
+                blocksize=f"{self.block if blocksize is None else blocksize}",
             )
             .remove(lambda x: x == "ITEM: TIMESTEP")
             .map(lambda x: x.split("ITEM: "))
@@ -101,7 +104,7 @@ class Simulation:
 
         self.trajectory = corpus.compute() if self.eager else corpus
 
-    def read_bonds(self, data_path: os.PathLike = None) -> None:
+    def read_bonds(self, data_path: os.PathLike = None, blocksize: str = None) -> None:
         """
         Read bond files, parse and store in class attribute
 
@@ -112,7 +115,7 @@ class Simulation:
             db.read_text(
                 self.__get_data_files(data_path, "bonds"),
                 linedelimiter="# Timestep",
-                blocksize=self.block,
+                blocksize=f"{self.block if blocksize is None else blocksize}",
             )
             .remove(lambda x: x == "# Timestep")
             .map(
@@ -129,7 +132,9 @@ class Simulation:
 
         self.bonds = corpus.compute() if self.eager else corpus
 
-    def read_species(self, data_path: os.PathLike = None) -> None:
+    def read_species(
+        self, data_path: os.PathLike = None, blocksize: str = None
+    ) -> None:
         """
         Read species files, parse and store species data in class attribute
 
@@ -138,7 +143,9 @@ class Simulation:
         """
         corpus = (
             db.read_text(
-                self.__get_data_files(data_path, "species"), linedelimiter="# Timestep"
+                self.__get_data_files(data_path, "species"),
+                linedelimiter="# Timestep",
+                blocksize=f"{self.block if blocksize is None else blocksize}",
             )
             .map(lambda x: x[1:].split("\n")[:-1])
             .remove(lambda x: x == [])
@@ -275,15 +282,10 @@ class Simulation:
         header, data = list(map(lambda x: x.split(), step_text))
 
         frame["timestep"] = int(data.pop(0))
-
-        print(header)
-        print(data)
         frame["no_moles"] = int(data[0])
         frame["no_species"] = int(data[1])
 
         for specie, amount in zip(header[2:], data[2:]):
-            if frame["timestep"] == 2000:
-                print(specie, amount, "\n")
             frame["species"][specie] = int(amount)
 
         return frame
