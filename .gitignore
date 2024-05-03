@@ -2,6 +2,7 @@ testbench.ipynb
 .vscode/
 .pre-commit-config.yaml
 TODO.md 
+docs/latest/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
