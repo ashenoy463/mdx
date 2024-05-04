@@ -1,5 +1,7 @@
-from scipy.sparse import coo_array
+import sparse
 import dask.bag as db
+import dask.array as da
+import dask.dataframe as df
 import re
 import os
 import pandas as pd
@@ -99,6 +101,17 @@ class Simulation:
             .map(lambda x: x.split("ITEM: "))
             .map(lambda x: x[:-1] if (x[-1] == "TIMESTEP") else x)
             .map(self.__process_traj_step, atomic_format=atomic_format)
+            .map(
+                lambda x: dict(
+                    # TEMPFIX: Limited columns parsed into arrays for now
+                    step=x["timestep"],
+                    r=da.from_array(x["atomic"][["xu", "yu", "zu"]].values),
+                    v=da.from_array(x["atomic"][["vx", "vy", "vz"]].values),
+                    q=da.from_array(x["atomic"]["q"].values),
+                    type=da.from_array(x["atomic"]["type"].values),
+                    box=x["box"]["bounds"],
+                )
+            )
             # .distinct(key=lambda x: x["timestep"]) ; causes memory leak on nanosecond scale data
         )
 
@@ -127,7 +140,10 @@ class Simulation:
             )
             .remove(lambda x: x == [])
             .map(self.__process_bond_step)
-            .distinct(key=lambda x: x["timestep"])
+            .map(
+                lambda x: dict(timestep=x["timestep"], bonds=da.from_array(x["bonds"]))
+            )
+            # .distinct(key=lambda x: x["timestep"])
         )
 
         self.bonds = corpus.compute() if self.eager else corpus
@@ -211,40 +227,30 @@ class Simulation:
             if label not in valid_items:
                 raise InvalidItem("Not a valid LAMMPS data item")
 
-            elif label == "NUMBER OF ATOMS":
-                frame["n_atoms"] = int(data.strip())
+            # elif label == "NUMBER OF ATOMS":
+            # frame["n_atoms"] = int(data.strip())
 
             elif label == "BOX BOUNDS":
                 frame["box"] = {
                     # "dim": int(len(header.split())),
                     "style": header.split(),
-                    "bounds": [
-                        tuple(map(lambda x: float(x), i.split()))
-                        for i in data.split("\n")[:-1]
-                    ],
+                    "bounds": da.from_array(
+                        [
+                            tuple(map(lambda x: float(x), i.split()))
+                            for i in data.split("\n")[:-1]
+                        ]
+                    ),
                 }
 
             elif label == "ATOMS":
 
-                # Almost intentionally bad implementation, never use this
                 if atomic_format == "frame":
-                    frame["atomic"] = [
-                        [
-                            (
-                                float(num)
-                                if any(mark in num for mark in [".", "e"])
-                                else int(num)
-                            )
-                            for num in x.split()
-                        ]
-                        for x in data.split("\n")
-                    ]
-
-                elif atomic_format == "pandas":
-                    dataf = pd.read_csv(
-                        io.StringIO(data), sep=" ", names=header.split()
-                    ).set_index("id")
-                    frame["atomic"] = dataf
+                    atomic_data = (
+                        pd.read_csv(io.StringIO(data), sep=" ", names=header.split())
+                        .set_index("id")
+                        .sort_index()
+                    )
+                    frame["atomic"] = atomic_data
 
                 else:
                     raise InvalidFormat("Select a valid atomic output format")
@@ -271,8 +277,9 @@ class Simulation:
 
         return {
             "timestep": timestep,
-            "bonds": coo_array(
-                (v, (i, j)),
+            "bonds": sparse.COO(
+                (i, j),
+                v,
                 shape=(self.meta["box"]["n_atoms"], self.meta["box"]["n_atoms"]),
             ),
         }
@@ -325,7 +332,7 @@ class Simulation:
         # TEMPFIX: file prefixes and extensions
         filetypes = (
             {
-                "trajectory": ("dat_trajectory" ".dump"),
+                "trajectory": ("dat_trajectory", ".dump"),
                 "bonds": ("dat_bonds", ".reaxff"),
                 "species": ("dat_species", ".out"),
                 "log": ("log_out", ""),
