@@ -2,6 +2,7 @@ import os
 import h5py
 from collections.abc import MutableMapping
 import numpy as np
+import dask.array as da
 
 
 # thints
@@ -39,6 +40,32 @@ def dict_flatten(dictionary, parent_key="", separator="_"):
         else:
             items.append((new_key, value))
     return dict(items)
+
+
+getkeys = lambda x: list(x.keys())
+
+
+def concat_keywise(x: dict, y: dict) -> dict:
+    """
+    Binary operation on dicts of Numpy-like arrays, returns dict
+    with arrays concenated along axis 0 keywise.
+
+    Args:
+        x (dict[ArrayLike])
+        y (dict[ArrayLike])
+
+    Returns:
+        dict[str,ArrayLike]
+    """
+    # TEMPFIX: not specifying keys makes merging partitions more painful
+    # keys = getkeys(x) if len(getkeys(x)) != 0 else y
+    keys = ["r", "v", "q", "type", "box"]
+    z = {}
+    for k in keys:
+        z[k] = da.concatenate([x[k], y[k]], axis=0)
+    if z == {}:
+        print(getkeys(x), getkeys(y))
+    return z
 
 
 def write_rdf(rdf_obj, sim_id: str, chunk_id: str, c: str, s: str, suffix=None):

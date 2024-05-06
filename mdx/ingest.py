@@ -1,7 +1,6 @@
 import sparse
 import dask.bag as db
 import dask.array as da
-import dask.dataframe as df
 import re
 import os
 import pandas as pd
@@ -11,7 +10,7 @@ from mdx.models.core import check_path
 from mdx.models.meta import FormatMeta
 from pydantic import PositiveInt, ValidationError, validate_call
 from typing import Union
-
+import mdx.helper_functions as hf
 
 # Exceptions
 
@@ -51,6 +50,8 @@ class Simulation:
 
     """
 
+    VALID_TRAJ_FORMATS = ["xarray", "frame"]
+
     def __init__(
         self,
         meta_file: os.PathLike,
@@ -81,7 +82,7 @@ class Simulation:
     def read_trajectory(
         self,
         data_path: os.PathLike = None,
-        atomic_format: str = "frame",
+        format: str = "xarray",
         blocksize: str = None,
     ) -> None:
         """
@@ -100,20 +101,35 @@ class Simulation:
             .remove(lambda x: x == "ITEM: TIMESTEP")
             .map(lambda x: x.split("ITEM: "))
             .map(lambda x: x[:-1] if (x[-1] == "TIMESTEP") else x)
-            .map(self.__process_traj_step, atomic_format=atomic_format)
-            .map(
+            .map(self.__process_traj_step)
+            # .distinct(key=lambda x: x["timestep"]) ; causes memory leak on nanosecond scale data
+        )
+        if format == "xarray":
+            corpus = corpus.map(
                 lambda x: dict(
                     # TEMPFIX: Limited columns parsed into arrays for now
                     step=x["timestep"],
-                    r=da.from_array(x["atomic"][["xu", "yu", "zu"]].values),
-                    v=da.from_array(x["atomic"][["vx", "vy", "vz"]].values),
-                    q=da.from_array(x["atomic"]["q"].values),
-                    type=da.from_array(x["atomic"]["type"].values),
-                    box=x["box"]["bounds"],
+                    r=da.expand_dims(
+                        da.from_array(x["atomic"][["xu", "yu", "zu"]].values), axis=0
+                    ),
+                    v=da.expand_dims(
+                        da.from_array(x["atomic"][["vx", "vy", "vz"]].values), axis=0
+                    ),
+                    q=da.expand_dims(da.from_array(x["atomic"]["q"].values), axis=0),
+                    type=da.expand_dims(
+                        da.from_array(x["atomic"]["type"].values), axis=0
+                    ),
+                    box=da.expand_dims(x["box"]["bounds"], axis=0),
                 )
+            ).fold(hf.concat_keywise)
+        elif format == "frame":
+            # TEMPFIX: distrinct causes memory leak on nanosecond scale
+            # corpus = corpus.distinct(key=lambda x: x["timestep"])
+            pass
+        else:
+            raise InvalidFormat(
+                "Invalid output format passed. Valid options are {self.VALID_TRAJ_FORMATS}"
             )
-            # .distinct(key=lambda x: x["timestep"]) ; causes memory leak on nanosecond scale data
-        )
 
         self.trajectory = corpus.compute() if self.eager else corpus
 
@@ -208,9 +224,9 @@ class Simulation:
 
     # Intermediate processing steps
 
-    def __process_traj_step(self, step_text: str, atomic_format: str):
+    def __process_traj_step(self, step_text: str):
         """
-        Parse raw trajectory data text of one frame into chosen format
+        Parse raw trajectory data text of one timestep into a frame
         """
         frame = {"timestep": "", "n_atoms": "", "atomic": ""}
         item_regex = "([A-Z ]*)([A-z ]*)\n((.*[\n]?)*)"
@@ -244,16 +260,12 @@ class Simulation:
 
             elif label == "ATOMS":
 
-                if atomic_format == "frame":
-                    atomic_data = (
-                        pd.read_csv(io.StringIO(data), sep=" ", names=header.split())
-                        .set_index("id")
-                        .sort_index()
-                    )
-                    frame["atomic"] = atomic_data
-
-                else:
-                    raise InvalidFormat("Select a valid atomic output format")
+                atomic_data = (
+                    pd.read_csv(io.StringIO(data), sep=" ", names=header.split())
+                    .set_index("id")
+                    .sort_index()
+                )
+                frame["atomic"] = atomic_data
 
             elif label == "DIMENSIONS":
                 # ??Grid??
