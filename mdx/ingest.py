@@ -1,6 +1,8 @@
+import numpy as np
 import sparse
 import dask.bag as db
 import dask.array as da
+import xarray as xr
 import re
 import os
 import pandas as pd
@@ -105,23 +107,30 @@ class Simulation:
             # .distinct(key=lambda x: x["timestep"]) ; causes memory leak on nanosecond scale data
         )
         if format == "xarray":
-            corpus = corpus.map(
-                lambda x: dict(
-                    # TEMPFIX: Limited columns parsed into arrays for now
-                    step=x["timestep"],
-                    r=da.expand_dims(
-                        da.from_array(x["atomic"][["xu", "yu", "zu"]].values), axis=0
-                    ),
-                    v=da.expand_dims(
-                        da.from_array(x["atomic"][["vx", "vy", "vz"]].values), axis=0
-                    ),
-                    q=da.expand_dims(da.from_array(x["atomic"]["q"].values), axis=0),
-                    type=da.expand_dims(
-                        da.from_array(x["atomic"]["type"].values), axis=0
-                    ),
-                    box=da.expand_dims(x["box"]["bounds"], axis=0),
+            corpus = (
+                corpus.map(
+                    lambda x: dict(
+                        # TEMPFIX: Limited columns parsed into arrays for now
+                        step=da.array([x["timestep"]]),
+                        r=da.expand_dims(
+                            da.array(x["atomic"][["xu", "yu", "zu"]].values), axis=0
+                        ),
+                        v=da.expand_dims(
+                            da.array(x["atomic"][["vx", "vy", "vz"]].values), axis=0
+                        ),
+                        q=da.expand_dims(
+                            da.from_array(x["atomic"]["q"].values), axis=0
+                        ),
+                        type=da.expand_dims(
+                            da.array(x["atomic"]["type"].values), axis=0
+                        ),
+                        box=da.expand_dims(da.array(x["box"]["bounds"]), axis=0),
+                    )
                 )
-            ).fold(hf.concat_keywise)
+                .map(self.__form_frame_dataset)
+                .fold(lambda x, y: xr.concat([x, y], dim="step"))
+                # .map(lambda x: x.drop_duplicates(dim="step"))
+            )
         elif format == "frame":
             # TEMPFIX: distrinct causes memory leak on nanosecond scale
             # corpus = corpus.distinct(key=lambda x: x["timestep"])
@@ -250,12 +259,10 @@ class Simulation:
                 frame["box"] = {
                     # "dim": int(len(header.split())),
                     "style": header.split(),
-                    "bounds": da.from_array(
-                        [
-                            tuple(map(lambda x: float(x), i.split()))
-                            for i in data.split("\n")[:-1]
-                        ]
-                    ),
+                    "bounds": [
+                        tuple(map(lambda x: float(x), i.split()))
+                        for i in data.split("\n")[:-1]
+                    ],
                 }
 
             elif label == "ATOMS":
@@ -308,6 +315,35 @@ class Simulation:
             frame["species"][specie] = int(amount)
 
         return frame
+
+    def __form_frame_dataset(self, frame):
+
+        n_atoms = self.meta["box"]["n_atoms"]
+        dt = self.meta["partition"]["step_size"]
+
+        ds = xr.Dataset(
+            data_vars=dict(
+                r=(["step", "atom", "pos"], frame["r"]),
+                v=(["step", "atom", "pos"], frame["v"]),
+                q=(["step", "atom"], frame["q"]),
+                # bond=(["step", "atom", "atom"],frame['bond']),
+                box=(["step", "pos", "case"], frame["box"]),
+                type=(["step", "atom"], frame["type"]),
+            ),
+            coords=dict(
+                # clunky dummy coords
+                pos=(["x", "y", "z"]),
+                # dims=(["xl", "yl", "zl", "xh", "yh", "zh"]),
+                pair=(["atom", "atom"]),
+                # natural
+                step=(["step"], frame["step"]),
+                atom=(["atom"], np.arange(1, n_atoms + 1)),
+                time=(["time"], frame["step"] * dt),
+            ),
+            attrs=hf.dict_flatten(self.meta),
+        )
+
+        return ds
 
     # Helper methods
 
